@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="Sonic Clap — Sound-triggered camera">
+<title>Sonic Clap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --bg: #0a0a0a;
+    --fg: #f0f0f0;
+    --mid: #555;
+    --dim: #222;
+    --border: rgba(240,240,240,0.1);
+    --accent: #f0f0f0;
+    --red: #ff2d2d;
+    --green: #2dff7e;
+    --mono: 'DM Mono', monospace;
+    --display: 'Bebas Neue', sans-serif;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    touch-action: none;
+  }
+
+  /* ── VIDEO ── */
+  #video-container {
+    position: fixed; inset: 0; z-index: 1; background: #000;
+  }
+  #video {
+    width: 100%; height: 100%; object-fit: cover;
+    opacity: 0; transition: opacity 0.6s ease;
+  }
+  #video.active { opacity: 1; }
+  #video.mirror { transform: scaleX(-1); }
+
+  /* ── VIGNETTE ── */
+  #vignette {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%);
+  }
+
+  /* ── FLASH ── */
+  #flash {
+    position: fixed; inset: 0; z-index: 200;
+    background: #fff; opacity: 0; pointer-events: none;
+    transition: opacity 0.06s ease-out;
+  }
+  #flash.on { opacity: 1; }
+
+  /* ── COUNTDOWN ── */
+  #countdown {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--display);
+    font-size: 200px; line-height: 1;
+    color: #fff;
+    letter-spacing: -4px;
+    display: none; z-index: 50;
+    text-shadow: 0 0 60px rgba(255,255,255,0.4);
+    animation: pulse 0.8s ease-out;
+  }
+  @keyframes pulse {
+    0% { transform: translate(-50%, -50%) scale(1.3); opacity: 0.4; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+
+  /* ── START SCREEN ── */
+  #start-screen {
+    position: fixed; inset: 0; z-index: 2000;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 48px 32px;
+    transition: opacity 0.4s ease;
+  }
+
+  .logo-mark {
+    width: 64px; height: 64px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .logo-mark::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--dim), transparent);
+  }
+  .logo-mark svg { width: 32px; height: 32px; fill: var(--fg); position: relative; z-index: 1; }
+
+  .start-label {
+    font-size: 10px; letter-spacing: 4px; color: var(--mid);
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+
+  .start-title {
+    font-family: var(--display);
+    font-size: 72px; line-height: 0.9;
+    letter-spacing: 2px;
+    color: var(--fg);
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  .start-sub {
+    font-size: 11px; color: var(--mid);
+    letter-spacing: 1px; margin-bottom: 48px;
+    text-align: center; line-height: 1.8;
+  }
+
+  .features {
+    width: 100%; max-width: 280px;
+    border-top: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .feat {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--mid); letter-spacing: 0.5px;
+  }
+  .feat-num {
+    font-family: var(--display); font-size: 18px;
+    color: var(--fg); width: 20px; flex-shrink: 0;
+  }
+
+  .start-btn {
+    width: 100%; max-width: 280px;
+    padding: 16px 24px;
+    background: var(--fg);
+    border: none; border-radius: 2px;
+    color: var(--bg);
+    font-family: var(--mono); font-size: 11px;
+    font-weight: 500; letter-spacing: 3px;
+    text-transform: uppercase; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .start-btn:active { transform: scale(0.98); opacity: 0.85; }
+  .start-btn.loading { opacity: 0.5; pointer-events: none; }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 1.5px solid rgba(0,0,0,0.2);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: none;
+    align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    padding-top: calc(16px + env(safe-area-inset-top));
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+  }
+  #topbar.active { display: flex; }
+
+  .tb-brand {
+    font-family: var(--display); font-size: 24px; letter-spacing: 2px;
+    color: var(--fg);
+  }
+  .tb-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: 2px; color: var(--mid);
+    text-transform: uppercase;
+  }
+  .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--mid); transition: background 0.3s, box-shadow 0.3s;
+  }
+  .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.warn { background: var(--red); box-shadow: 0 0 8px var(--red); animation: blink 0.5s ease infinite alternate; }
+  @keyframes blink { to { opacity: 0.3; } }
+
+  /* ── VOLUME STRIP (top, slim) ── */
+  #vol-strip {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 2px; z-index: 30;
+    background: var(--dim); display: none;
+  }
+  #vol-strip.active { display: block; }
+  #vol-fill {
+    height: 100%; width: 0%;
+    background: var(--fg);
+    transition: width 0.04s linear;
+  }
+
+  /* ── CONTROLS PANEL ── */
+  #controls {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    display: none; flex-direction: column; gap: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.92) 70%, transparent);
+    padding-bottom: calc(28px + env(safe-area-inset-bottom));
+  }
+  #controls.active { display: flex; }
+
+  /* ── WAVEFORM ── */
+  #viz-row {
+    padding: 16px 20px 0;
+  }
+  #visualizer-wrap {
+    width: 100%; height: 40px;
+    position: relative; overflow: hidden;
+  }
+  #visualizer { width: 100%; height: 100%; display: block; }
+  #thresh-line {
+    position: absolute; left: 0; right: 0;
+    height: 1px; background: var(--red); opacity: 0.6;
+    pointer-events: none; transition: bottom 0.1s;
+  }
+
+  /* ── DIVIDER ── */
+  .divider { height: 1px; background: var(--border); margin: 14px 20px; }
+
+  /* ── SLIDER ── */
+  .slider-row {
+    padding: 0 20px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .slider-label {
+    font-size: 9px; letter-spacing: 3px; color: var(--mid);
+    text-transform: uppercase; white-space: nowrap; width: 60px;
+  }
+  input[type="range"] {
+    flex: 1; height: 1px;
+    -webkit-appearance: none; appearance: none;
+    background: var(--mid); outline: none; border-radius: 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--fg); border-radius: 50%; cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: var(--fg); border-radius: 50%; cursor: pointer;
+    border: none;
+  }
+  .slider-val {
+    font-size: 11px; color: var(--fg); width: 32px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── BUTTON ROW ── */
+  .btn-row {
+    display: flex; gap: 10px; padding: 16px 20px 0;
+  }
+  .btn {
+    flex: 1; padding: 13px 10px;
+    border: 1px solid var(--border); border-radius: 2px;
+    background: rgba(255,255,255,0.04);
+    color: var(--fg);
+    font-family: var(--mono); font-size: 9px;
+    font-weight: 500; letter-spacing: 2.5px;
+    text-transform: uppercase; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn:active { transform: scale(0.97); background: rgba(255,255,255,0.1); }
+  .btn:disabled { opacity: 0.25; pointer-events: none; }
+  .btn.btn-primary {
+    background: var(--fg); color: var(--bg);
+    border-color: var(--fg);
+  }
+  .btn.btn-primary:active { background: rgba(240,240,240,0.85); }
+  .btn svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
+
+  /* ── GALLERY ── */
+  #gallery {
+    position: fixed; top: calc(60px + env(safe-area-inset-top));
+    right: 16px; z-index: 20;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .thumb {
+    width: 60px; height: 60px;
+    border: 1px solid var(--border);
+    overflow: hidden; cursor: pointer;
+    pointer-events: auto;
+    animation: thumbIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+  }
+  @keyframes thumbIn {
+    from { transform: translateX(80px) scale(0.85); opacity: 0; }
+    to { transform: translateX(0) scale(1); opacity: 1; }
+  }
+  .thumb.out {
+    animation: thumbOut 0.3s ease forwards;
+  }
+  @keyframes thumbOut {
+    to { transform: translateX(70px) scale(0.8); opacity: 0; }
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; filter: grayscale(20%); }
+  .thumb-badge {
+    position: absolute; bottom: 3px; right: 3px;
+    width: 14px; height: 14px;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb-badge svg { width: 8px; height: 8px; fill: #fff; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed; bottom: 200px; left: 50%;
+    transform: translateX(-50%) translateY(14px);
+    background: rgba(10,10,10,0.9);
+    border: 1px solid var(--border);
+    padding: 10px 18px;
+    font-size: 10px; letter-spacing: 2px; color: var(--mid);
+    text-transform: uppercase;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 40; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── ERROR ── */
+  #error-modal {
+    position: fixed; inset: 0; z-index: 3000;
+    background: rgba(0,0,0,0.97);
+    display: none; align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .err-box {
+    width: 100%; max-width: 320px;
+    border: 1px solid var(--border);
+    padding: 32px;
+  }
+  .err-code {
+    font-size: 9px; letter-spacing: 3px; color: var(--red);
+    text-transform: uppercase; margin-bottom: 16px;
+  }
+  .err-title {
+    font-family: var(--display); font-size: 36px;
+    line-height: 1; margin-bottom: 12px;
+  }
+  .err-msg {
+    font-size: 11px; color: var(--mid); line-height: 1.7;
+    margin-bottom: 28px;
+  }
+  .err-btn {
+    width: 100%; padding: 14px;
+    background: var(--fg); border: none; border-radius: 2px;
+    color: var(--bg); font-family: var(--mono);
+    font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  canvas#capture-canvas { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ── START SCREEN ── -->
+<div id="start-screen">
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18A9 9 0 0 0 12 3zM6.5 12a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+  </div>
+  <p class="start-label">Sound-triggered camera</p>
+  <h1 class="start-title">SONIC<br>CLAP</h1>
+  <p class="start-sub">Tepuk tangan — kamera memotret<br>Tanpa menyentuh layar</p>
+
+  <div class="features">
+    <div class="feat"><span class="feat-num">01</span><span>Deteksi suara real-time</span></div>
+    <div class="feat"><span class="feat-num">02</span><span>Countdown 3 detik otomatis</span></div>
+    <div class="feat"><span class="feat-num">03</span><span>Download langsung ke galeri</span></div>
+  </div>
+
+  <button class="start-btn" id="startBtn" onclick="initApp()">
+    <span id="btnLabel">Aktifkan Kamera</span>
+  </button>
+</div>
+
+<!-- ── ERROR ── -->
+<div id="error-modal">
+  <div class="err-box">
+    <div class="err-code">Error</div>
+    <div class="err-title">GAGAL</div>
+    <div class="err-msg" id="errorMsg">—</div>
+    <button class="err-btn" onclick="location.reload()">Coba Lagi</button>
+  </div>
+</div>
+
+<!-- ── FLASH ── -->
+<div id="flash"></div>
+
+<!-- ── VIDEO ── -->
+<div id="video-container">
+  <video id="video" autoplay playsinline muted></video>
+</div>
+<div id="vignette"></div>
+
+<!-- ── TOP BAR ── -->
+<div id="topbar">
+  <span class="tb-brand">SONIC CLAP</span>
+  <div class="tb-status">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">SIAP</span>
+  </div>
+</div>
+
+<!-- ── VOLUME STRIP ── -->
+<div id="vol-strip"><div id="vol-fill"></div></div>
+
+<!-- ── COUNTDOWN ── -->
+<div id="countdown"></div>
+
+<!-- ── GALLERY ── -->
+<div id="gallery"></div>
+
+<!-- ── TOAST ── -->
+<div id="toast">Tepuk tangan untuk memotret</div>
+
+<!-- ── CONTROLS ── -->
+<div id="controls">
+  <div id="viz-row">
+    <div id="visualizer-wrap">
+      <canvas id="visualizer"></canvas>
+      <div id="thresh-line"></div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="slider-row">
+    <span class="slider-label">Sensitivitas</span>
+    <input type="range" id="threshold" min="5" max="90" value="30" oninput="updateThreshold(this.value)">
+    <span class="slider-val" id="threshVal">30</span>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="btnToggle" onclick="toggleCamera()">
+      <svg viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>
+      <span>Ganti</span>
+    </button>
+    <button class="btn btn-primary" onclick="manualCapture()">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5"/></svg>
+      <span>Foto Manual</span>
+    </button>
+  </div>
+</div>
+
+<canvas id="capture-canvas"></canvas>
+
+<script>
+// ── CONFIG ──
+const CFG = {
+  THRESHOLD: 30,
+  COOLDOWN: 2200,
+  FFT: 256,
+  THUMB_TTL: 3000
+};
+
+// ── STATE ──
+const S = {
+  stream: null,
+  audioStream: null,
+  audioCtx: null,
+  analyser: null,
+  facingMode: 'environment',
+  isCounting: false,
+  isListening: false,
+  animId: null,
+  lastTrigger: 0
+};
+
+// ── ELEMENTS ──
+const E = {
+  video: document.getElementById('video'),
+  capCanvas: document.getElementById('capture-canvas'),
+  vizCanvas: document.getElementById('visualizer'),
+  countdown: document.getElementById('countdown'),
+  gallery: document.getElementById('gallery'),
+  flash: document.getElementById('flash'),
+  statusDot: document.getElementById('statusDot'),
+  statusText: document.getElementById('statusText'),
+  volFill: document.getElementById('vol-fill'),
+  threshLine: document.getElementById('thresh-line'),
+  controls: document.getElementById('controls'),
+  volStrip: document.getElementById('vol-strip'),
+  topbar: document.getElementById('topbar'),
+  startScreen: document.getElementById('start-screen'),
+  startBtn: document.getElementById('startBtn'),
+  btnLabel: document.getElementById('btnLabel'),
+  errorModal: document.getElementById('error-modal'),
+  errorMsg: document.getElementById('errorMsg'),
+  toast: document.getElementById('toast')
+};
+
+let vCtx = null;
+try { vCtx = E.vizCanvas.getContext('2d'); } catch(e) {}
+
+// ── HELPERS ──
+function errMsg(e) {
+  if (!e) return 'Error tidak diketahui';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  return String(e);
+}
+
+function showError(msg) {
+  E.errorMsg.textContent = msg;
+  E.errorModal.style.display = 'flex';
+}
+
+function showToast(msg, dur = 3500) {
+  E.toast.textContent = msg;
+  E.toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => E.toast.classList.remove('show'), dur);
+}
+
+function resizeViz() {
+  E.vizCanvas.width = E.vizCanvas.offsetWidth || 300;
+  E.vizCanvas.height = E.vizCanvas.offsetHeight || 40;
+}
+window.addEventListener('resize', resizeViz);
+
+// ── INIT ──
+async function initApp() {
+  E.startBtn.classList.add('loading');
+  E.btnLabel.textContent = 'Memuat...';
+  E.startBtn.innerHTML = '<div class="spinner"></div><span>Memuat...</span>';
+
+  try {
+    await initCamera();
+    await initAudio();
+
+    // Show UI
+    E.startScreen.style.opacity = '0';
+    setTimeout(() => E.startScreen.style.display = 'none', 400);
+    E.controls.classList.add('active');
+    E.topbar.classList.add('active');
+    E.volStrip.classList.add('active');
+    E.video.classList.add('active');
+    S.isListening = true;
+    E.statusDot.classList.add('on');
+    E.statusText.textContent = 'LIVE';
+
+    resizeViz();
+    startViz();
+
+    setTimeout(() => showToast('Tepuk tangan untuk memotret'), 800);
+  } catch(err) {
+    console.error(err);
+    showError(errMsg(err));
+    E.startBtn.classList.remove('loading');
+    E.startBtn.innerHTML = '<span>Coba Lagi</span>';
+  }
+}
+
+// ── CAMERA ──
+async function initCamera() {
+  // Stop existing tracks
+  if (S.stream) S.stream.getTracks().forEach(t => t.stop());
+
+  const tries = [
+    { video: { facingMode: S.facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: S.facingMode }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  let lastErr;
+  for (const constraints of tries) {
+    try {
+      S.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch(e) {
+      lastErr = e;
+    }
+  }
+  if (!S.stream) throw lastErr || new Error('Kamera tidak dapat diakses');
+
+  E.video.srcObject = S.stream;
+  E.video.classList.toggle('mirror', S.facingMode === 'user');
+
+  // ── FIX: robust video ready ──
+  await waitForVideo(E.video);
+}
+
+function waitForVideo(video) {
+  return new Promise((resolve, reject) => {
+    // Already has data?
+    if (video.readyState >= 2) { video.play().then(resolve).catch(resolve); return; }
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.play().then(resolve).catch(resolve);
+    };
+
+    // Listen for multiple events — whichever fires first
+    video.addEventListener('loadedmetadata', finish, { once: true });
+    video.addEventListener('loadeddata', finish, { once: true });
+    video.addEventListener('canplay', finish, { once: true });
+
+    // Generous timeout — 15 s, and resolve (not reject) so UX isn't broken
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        console.warn('Video load timeout — proceeding anyway');
+        video.play().catch(() => {});
+        resolve(); // don't throw; camera may still work
+      }
+    }, 15000);
+
+    video.onerror = (ev) => {
+      clearTimeout(timer);
+      reject(new Error('Video error: ' + (ev?.message || 'unknown')));
+    };
+  });
+}
+
+// ── AUDIO ──
+async function initAudio() {
+  const audioConstraints = [
+    { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } },
+    { audio: true }
+  ];
+
+  let lastErr;
+  for (const c of audioConstraints) {
+    try {
+      S.audioStream = await navigator.mediaDevices.getUserMedia(c);
+      break;
+    } catch(e) { lastErr = e; }
+  }
+  if (!S.audioStream) throw lastErr || new Error('Mikrofon tidak dapat diakses');
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error('Web Audio API tidak didukung');
+
+  S.audioCtx = new AC();
+  S.analyser = S.audioCtx.createAnalyser();
+  S.analyser.fftSize = CFG.FFT;
+  S.analyser.smoothingTimeConstant = 0.75;
+
+  const src = S.audioCtx.createMediaStreamSource(S.audioStream);
+  src.connect(S.analyser);
+}
+
+// ── VISUALIZER + DETECTION ──
+function startViz() {
+  if (!S.analyser || !vCtx) return;
+
+  const data = new Uint8Array(S.analyser.frequencyBinCount);
+  const W = () => E.vizCanvas.width;
+  const H = () => E.vizCanvas.height;
+
+  function loop() {
+    if (!S.isListening) return;
+    S.animId = requestAnimationFrame(loop);
+
+    S.analyser.getByteFrequencyData(data);
+
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i];
+    const pct = (sum / data.length / 255) * 100;
+
+    // Volume strip
+    E.volFill.style.width = pct + '%';
+
+    // Threshold line
+    const vizH = H();
+    if (vizH) {
+      E.threshLine.style.bottom = (CFG.THRESHOLD / 100 * vizH) + 'px';
+    }
+
+    // Trigger
+    const now = Date.now();
+    if (pct > CFG.THRESHOLD && !S.isCounting && now - S.lastTrigger > CFG.COOLDOWN) {
+      S.lastTrigger = now;
+      triggerCapture();
+    }
+
+    // Draw
+    const w = W(), h = H();
+    vCtx.clearRect(0, 0, w, h);
+
+    const triggered = pct > CFG.THRESHOLD;
+    const barW = (w / data.length) * 2.4;
+    let x = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const barH = (data[i] / 255) * h;
+      vCtx.fillStyle = triggered ? 'rgba(255,45,45,0.85)' : 'rgba(240,240,240,0.7)';
+      vCtx.fillRect(x, h - barH, barW, barH);
+      x += barW + 0.8;
+    }
+  }
+
+  loop();
+}
+
+function updateThreshold(v) {
+  CFG.THRESHOLD = parseInt(v);
+  document.getElementById('threshVal').textContent = v;
+}
+
+// ── CAPTURE FLOW ──
+function triggerCapture() {
+  if (S.isCounting) return;
+  S.isCounting = true;
+
+  let count = 3;
+  E.countdown.textContent = count;
+  E.countdown.style.display = 'block';
+
+  beep(600);
+
+  const iv = setInterval(() => {
+    count--;
+    if (count > 0) {
+      E.countdown.style.animation = 'none';
+      void E.countdown.offsetWidth; // reflow
+      E.countdown.style.animation = '';
+      E.countdown.textContent = count;
+      beep(count === 1 ? 1000 : 700);
+    } else {
+      clearInterval(iv);
+      E.countdown.style.display = 'none';
+      takePhoto();
+      S.isCounting = false;
+    }
+  }, 1000);
+}
+
+function manualCapture() {
+  if (!S.isCounting) triggerCapture();
+}
+
+function beep(freq) {
+  try {
+    if (!S.audioCtx) return;
+    const osc = S.audioCtx.createOscillator();
+    const g = S.audioCtx.createGain();
+    osc.connect(g); g.connect(S.audioCtx.destination);
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.08, S.audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, S.audioCtx.currentTime + 0.15);
+    osc.start(); osc.stop(S.audioCtx.currentTime + 0.15);
+  } catch(e) {}
+}
+
+// ── PHOTO ──
+function takePhoto() {
+  try {
+    const vw = E.video.videoWidth || 1280;
+    const vh = E.video.videoHeight || 720;
+    E.capCanvas.width = vw; E.capCanvas.height = vh;
+
+    const ctx = E.capCanvas.getContext('2d');
+    if (S.facingMode === 'user') {
+      ctx.translate(vw, 0); ctx.scale(-1, 1);
+    }
+    ctx.drawImage(E.video, 0, 0);
+
+    const dataUrl = E.capCanvas.toDataURL('image/jpeg', 0.92);
+    addThumb(dataUrl);
+    downloadImg(dataUrl);
+
+    // Flash
+    E.flash.classList.add('on');
+    setTimeout(() => E.flash.classList.remove('on'), 80);
+
+    if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+    beep(1400);
+
+    E.statusText.textContent = 'TERSIMPAN';
+    E.statusDot.classList.remove('on'); E.statusDot.classList.add('warn');
+    setTimeout(() => {
+      E.statusText.textContent = 'LIVE';
+      E.statusDot.classList.remove('warn'); E.statusDot.classList.add('on');
+    }, 1400);
+  } catch(e) {
+    console.error('Photo error:', e);
+  }
+}
+
+function addThumb(dataUrl) {
+  const wrap = document.createElement('div');
+  wrap.className = 'thumb';
+
+  const img = document.createElement('img');
+  img.src = dataUrl;
+
+  const badge = document.createElement('div');
+  badge.className = 'thumb-badge';
+  badge.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>';
+
+  wrap.appendChild(img); wrap.appendChild(badge);
+  wrap.onclick = () => downloadImg(dataUrl);
+  E.gallery.prepend(wrap);
+
+  // Limit to 4 thumbs
+  while (E.gallery.children.length > 4) {
+    E.gallery.lastChild.remove();
+  }
+
+  setTimeout(() => {
+    wrap.classList.add('out');
+    setTimeout(() => wrap.remove(), 350);
+  }, CFG.THUMB_TTL);
+}
+
+function downloadImg(dataUrl) {
+  try {
+    const a = document.createElement('a');
+    a.download = 'sonic-' + Date.now() + '.jpg';
+    a.href = dataUrl; a.click();
+  } catch(e) {}
+}
+
+// ── TOGGLE CAMERA ──
+async function toggleCamera() {
+  const btn = document.getElementById('btnToggle');
+  btn.disabled = true;
+  S.facingMode = S.facingMode === 'environment' ? 'user' : 'environment';
+  try {
+    await initCamera();
+  } catch(e) {
+    S.facingMode = S.facingMode === 'environment' ? 'user' : 'environment';
+    showToast('Gagal ganti kamera');
+  }
+  btn.disabled = false;
+}
+
+// ── VISIBILITY ──
+document.addEventListener('visibilitychange', () => {
+  S.isListening = !document.hidden;
+  if (!document.hidden && S.analyser) startViz();
+  if (S.audioCtx && !document.hidden && S.audioCtx.state === 'suspended') {
+    S.audioCtx.resume();
+  }
+});
+
+// ── CLEANUP ──
+window.addEventListener('beforeunload', () => {
+  S.isListening = false;
+  if (S.animId) cancelAnimationFrame(S.animId);
+  if (S.stream) S.stream.getTracks().forEach(t => t.stop());
+  if (S.audioStream) S.audioStream.getTracks().forEach(t => t.stop());
+  if (S.audioCtx) S.audioCtx.close();
+});
+</script>
+</body>
+</html>
